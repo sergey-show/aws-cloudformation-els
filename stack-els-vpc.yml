@@ -1,4 +1,5 @@
 Parameters:
+  
   NetmaskPrefix:
     Description: "Prefix for network mask, it's concatenated with '.0.0/16'"
     Type: String

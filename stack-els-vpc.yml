@@ -1,0 +1,181 @@
+Parameters:
+  NetmaskPrefix:
+    Description: "Prefix for network mask, it's concatenated with '.0.0/16'"
+    Type: String
+    Default: 30.10
+  Owner:
+    Description: String tag with Owner
+    Type: String
+    Default: me
+  Project:
+    Description: String tag with Project
+    Type: String
+    Default: Elasticsearch
+  Env:
+    Description: String tag with Env
+    Type: String
+    Default: dev
+  Version:
+    Description: Elasticsearch Version
+    Type: Number
+    Default: 6.3
+    AllowedValues: [ 5.1, 5.3, 5.5., 5.6, 6.0, 6.2, 6.3 ]
+  DomainName:
+    Description: A name for the Amazon ES domain
+    Type: String
+  EBSVolumeSize:
+    Description: The size of the EBS volume for each data node. The minimum and maximum size of an EBS volume depends on the EBS volume type and the instance type to which it is attached.
+    Type: Number
+    Default: 10
+  NodeType:
+    Description: The node type to be provisioned for the Elasticsearch cluster
+    Type: String
+    Default: t2.small.elasticsearch
+    AllowedValues:
+      - t2.small.elasticsearch
+      - m4.large.elasticsearch
+      - m4.xlarge.elasticsearch
+      - c4.large.elasticsearch
+      - c4.xlarge.elasticsearch
+      - r4.large.elasticsearch
+      - r4.xlarge.elasticsearch
+    ConstraintDescription: must be a valid Elasticsearch node type.
+  NodeCount:
+    Description: The number of nodes in the Elasticsearch cluster.
+    Type: Number
+    Default: '1'
+  VpcId:
+    Description: input your VpcId or chose create VPC
+    Type: String
+    Default: create
+    
+Resources:
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Join [ ".", [!Ref NetmaskPrefix, "0.0/16"] ]
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - { Key: Name, Value: !Join [ "-", [!Ref Project, !Ref Env] ] }
+        - { Key: Project, Value: !Ref Project }
+        - { Key: Env, Value: !Ref Env }
+        - { Key: Owner, Value: !Ref Owner }
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Ref 'AWS::StackName'
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '443'
+        ToPort: '443'
+        CidrIp: 0.0.0.0/0
+      VpcId: !Ref Vpc
+      Tags:
+        - { Key: Name, Value: !Join [ "-", [!Ref Project, !Ref Env] ] }
+        - { Key: Project, Value: !Ref Project }
+        - { Key: Env, Value: !Ref Env }
+        - { Key: Owner, Value: !Ref Owner }
+
+  SubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: us-east-2a
+      CidrBlock: !Join [ ".", [!Ref NetmaskPrefix, "0.0/20"] ]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - { Key: Name, Value: !Join [ "-", [!Ref Project, !Ref Env] ] }
+        - { Key: Project, Value: !Ref Project }
+        - { Key: Env, Value: !Ref Env }
+        - { Key: Owner, Value: !Ref Owner }
+      VpcId: !Ref Vpc
+
+  SubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: us-east-2b
+      CidrBlock: !Join [ ".", [!Ref NetmaskPrefix, "16.0/20"] ]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - { Key: Name, Value: !Join [ "-", [!Ref Project, !Ref Env] ] }
+        - { Key: Project, Value: !Ref Project }
+        - { Key: Env, Value: !Ref Env }
+        - { Key: Owner, Value: !Ref Owner }
+      VpcId: !Ref Vpc
+
+  SubnetC:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: us-east-2c
+      CidrBlock: !Join [ ".", [!Ref NetmaskPrefix, "32.0/20"] ]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - { Key: Name, Value: !Join [ "-", [!Ref Project, !Ref Env] ] }
+        - { Key: Project, Value: !Ref Project }
+        - { Key: Env, Value: !Ref Env }
+        - { Key: Owner, Value: !Ref Owner }
+      VpcId: !Ref Vpc
+
+  ElasticsearchDomain:
+    Type: 'AWS::Elasticsearch::Domain'
+    Properties:
+      DomainName: !Ref DomainName
+      ElasticsearchVersion: '6.3'
+      ElasticsearchClusterConfig:
+        InstanceCount: !Ref NodeCount
+        ZoneAwarenessEnabled: 'false'
+        InstanceType: !Ref NodeType
+      EBSOptions:
+        EBSEnabled: true
+        Iops: 0
+        VolumeSize: !Ref EBSVolumeSize
+        VolumeType: gp2
+      SnapshotOptions:
+        AutomatedSnapshotStartHour: '0'
+      AccessPolicies:
+        Statement: 
+        - 
+          Effect: "Allow"
+          Principal:
+             AWS: "*"
+          Action: "es:*"
+          Resource:
+            !Join ["", [ !Join [":", [ "arn:aws:es", !Ref "AWS::Region", !Ref "AWS::AccountId", "domain/"]], !Join ["-", [!Ref DomainName]], "/*"]]
+      AdvancedOptions:
+        rest.action.multi.allow_explicit_index: 'true'
+      VPCOptions:
+        SubnetIds:
+          - !Ref SubnetA
+        SecurityGroupIds: 
+          - !Ref SecurityGroup
+      Tags:
+        - { Key: Name, Value: !Join [ "-", [!Ref Project, !Ref Env] ] }
+        - { Key: Project, Value: !Ref Project }
+        - { Key: Env, Value: !Ref Env }
+        - { Key: Owner, Value: !Ref Owner }
+
+Outputs:
+  KibanaURL:
+    Description: Kibana URL
+    Value: !Join 
+      - ''
+      - - !GetAtt 
+          - ElasticsearchDomain
+          - DomainEndpoint
+        - /_plugin/kibana/
+  ElasticsearchEndpoint:
+    Description: Elasticsearch domain endpoint
+    Value: !GetAtt 
+      - ElasticsearchDomain
+      - DomainEndpoint
+  ElasticsearchDomainARN:
+    Description: Elasticsearch domain ARN
+    Value: !GetAtt 
+      - ElasticsearchDomain
+      - DomainArn
+  SecurityGroupId:
+    Description: GroupID
+    Value: !GetAtt SecurityGroup.GroupId
+  Vpc:
+    Description: vpc CidrBlock
+    Value: !GetAtt Vpc.CidrBlock
